@@ -2,7 +2,7 @@ import sys
 import json
 import time
 import matplotlib.pyplot as plt
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 from openai import OpenAI
 
@@ -21,6 +21,7 @@ class TeeLogger:
         self.terminal.flush()
         self.log.flush()
 
+# This ensures every print() goes to both the screen and the file
 sys.stdout = TeeLogger("benchmark_log.txt")
 
 # ==========================================
@@ -32,7 +33,7 @@ class BenchmarkItem(BaseModel):
     difficulty_intent: int = Field(ge=1, le=10)
 
 class Evaluation(BaseModel):
-    score: float = Field(description="Score between 0.0 and 1.0")
+    score: float = Field(ge=0, le=1)
     reasoning: str
 
 # ==========================================
@@ -44,121 +45,98 @@ class EvolvingBenchmark:
         self.model = model_name
         self.history: List[str] = []
         self.ema_score: float = 0.0
-        self.alpha = alpha  # EMA smoothing factor
+        self.alpha = alpha 
 
     def get_novel_question(self) -> BenchmarkItem:
         history_str = ", ".join(self.history[-15:])
-        # Difficulty scaling: if EMA is high, push for harder questions
-        target_diff = 10 if self.ema_score > 0.8 else 5
+        # Utility: Scale difficulty based on performance (EMA)
+        target_diff = 9 if self.ema_score > 0.8 else 5
         
         prompt = (
-            f"Generate a novel, complex reasoning question. Target difficulty: {target_diff}/10. "
-            f"Avoid these previous topics: {history_str}. "
-            "Return ONLY a JSON object with keys: 'topic', 'question', 'difficulty_intent'."
+            f"Generate a novel reasoning question (Difficulty: {target_diff}/10). "
+            f"Avoid these topics: {history_str}. "
+            "Return ONLY JSON with keys: 'topic', 'question', 'difficulty_intent'."
         )
         
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": "You are a benchmark generator. You MUST output valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "system", "content": "You are a JSON generator."},
+                      {"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
         return BenchmarkItem.model_validate_json(response.choices[0].message.content)
 
-    def get_answer(self, question: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": question}]
-        )
-        return response.choices[0].message.content
+    def run_iteration(self):
+        # 1. Generate
+        item = self.get_novel_question()
+        self.history.append(item.topic)
+        print(f"[?] Topic: {item.topic}")
 
-    def judge_answer(self, question: str, answer: str) -> Evaluation:
-        prompt = (
-            f"Evaluate the following response to the question. \n"
-            f"Question: {question}\nAnswer: {answer}\n"
-            "Score from 0.0 (wrong) to 1.0 (perfect). Return ONLY JSON with 'score' and 'reasoning'."
-        )
-        response = self.client.chat.completions.create(
+        # 2. Answer
+        answer_resp = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": "You are an objective judge. Output JSON only."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "user", "content": item.question}]
+        )
+        answer = answer_resp.choices[0].message.content
+
+        # 3. Judge
+        eval_resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": "Judge answer 0-1. Return JSON: {'score': float, 'reasoning': str}"},
+                      {"role": "user", "content": f"Q: {item.question}\nA: {answer}"}],
             response_format={"type": "json_object"}
         )
-        return Evaluation.model_validate_json(response.choices[0].message.content)
-
-    def update_ema(self, new_score: float):
+        eval_result = Evaluation.model_validate_json(eval_resp.choices[0].message.content)
+        
+        # 4. Update EMA: S_t = alpha*Y_t + (1-alpha)*S_{t-1}
         if self.ema_score == 0:
-            self.ema_score = new_score
+            self.ema_score = eval_result.score
         else:
-            self.ema_score = (self.alpha * new_score) + (1 - self.alpha) * self.ema_score
+            self.ema_score = (self.alpha * eval_result.score) + (1 - self.alpha) * self.ema_score
+            
+        print(f"[*] Score: {eval_result.score} | EMA: {self.ema_score:.4f}")
+        return eval_result.score
 
 # ==========================================
-# 4. EXECUTION LOOP & PLOTTING
+# 4. EXECUTION LOOP
 # ==========================================
-# Configuration for Google Gemini (OpenAI-compatible)
 SYSTEM_CONFIG = {
     "api_key": "YOUR_GEMINI_API_KEY",
     "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "model_name": "gemini-2.5-flash" 
+    "model_name": "gemini-2.5-flash"
 }
 
 bench = EvolvingBenchmark(**SYSTEM_CONFIG)
-raw_scores = []
-ema_trend = []
-
-print("Starting Self-Evolving Benchmark Loop...")
+raw_scores, ema_trend = [], []
 
 try:
-    for i in range(10): # Set number of iterations
+    for i in range(10): 
         print(f"\n--- Iteration {i+1} ---")
         try:
-            # Step 1: Generate
-            item = bench.get_novel_question()
-            bench.history.append(item.topic)
-            print(f"[?] Topic: {item.topic}")
-            print(f"[?] Question: {item.question[:100]}...")
-
-            # Step 2: Answer
-            answer = bench.get_answer(item.question)
-
-            # Step 3: Judge
-            eval_result = bench.judge_answer(item.question, answer)
-            
-            # Step 4: Update Stats
-            bench.update_ema(eval_result.score)
-            raw_scores.append(eval_result.score)
+            score = bench.run_iteration()
+            raw_scores.append(score)
             ema_trend.append(bench.ema_score)
-
-            print(f"[*] Score: {eval_result.score} | EMA: {bench.ema_score:.4f}")
-            print(f"[*] Reasoning: {eval_result.reasoning[:120]}...")
-
         except Exception as e:
-            print(f"[!] Iteration failed: {e}")
+            print(f"[!] Error: {e}")
             if "429" in str(e):
-                print("[!] Rate limit hit. Waiting 60s...")
+                print("[!] Rate limit reached. Sleeping 60s...")
                 time.sleep(60)
 
-        # Pause to respect Gemini Free Tier (15 Requests Per Minute)
-        time.sleep(5)
+        # MANDATORY: 12s sleep to keep within 15 requests/min limit
+        time.sleep(12)
 
 finally:
-    # Generate final visualization
     if raw_scores:
-        plt.figure(figsize=(12, 6))
-        plt.scatter(range(1, len(raw_scores)+1), raw_scores, color='blue', alpha=0.4, label='Raw Scores')
+        plt.figure(figsize=(10, 5))
+        plt.scatter(range(1, len(raw_scores)+1), raw_scores, color='blue', alpha=0.3, label='Raw Scores')
         plt.plot(range(1, len(ema_trend)+1), ema_trend, color='red', linewidth=2, label='EMA Trend')
-        plt.title('LLM Self-Evolving Benchmark (Gemini 2.5 Flash)')
+        plt.title('LLM Evolution Benchmark')
         plt.xlabel('Iteration')
-        plt.ylabel('Score (0.0 - 1.0)')
-        plt.ylim(0, 1.1)
+        plt.ylabel('Score')
         plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.grid(True, alpha=0.3)
+        
+        # SAVE BEFORE SHOW
         plt.savefig("benchmark_results_plot.png")
-        print("\n[+] Success: Final plot saved to 'benchmark_results_plot.png'")
+        print("\n[+] SUCCESS: Plot saved as 'benchmark_results_plot.png'")
         plt.show()
-
-print("\nBenchmark Session Complete. Log saved to 'benchmark_log.txt'.")
