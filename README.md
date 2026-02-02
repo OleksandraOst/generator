@@ -15,5 +15,7 @@ The difficulty integer (1–10) directly changes the instructions given to the G
 
 * Low Difficulty (1–4): The Generator is instructed to ask straightforward questions (e.g., standard definitions, well-known clinical guidelines).
 * High Difficulty (8–10): The Generator is forced to create "novel reasoning" tasks. It looks for edge cases, conflicting constraints, or scenarios where standard rules fail.
+  
+<img width="1394" height="714" alt="Screenshot 2026-02-02 at 17 42 46" src="https://github.com/user-attachments/assets/18020c81-3ff8-4a17-a454-46553a85a891" />
 
 <img width="1316" height="701" alt="Screenshot 2026-02-01 at 21 37 29" src="https://github.com/user-attachments/assets/9288f9a8-c9b0-43f7-8df3-920c44dac9f9" />
