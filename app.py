@@ -4,10 +4,11 @@ import matplotlib.pyplot as plt
 from benchmark_generator import AstraZenecaBenchmark # Our logic file
 import time
 
-st.set_page_config(page_title="AZ AI-Science Guardrail", layout="wide")
+st.set_page_config(page_title="AZ AI-Science Assistant", layout="wide")
 
 # Custom AZ Branding
-st.markdown("<h1 style='color: #800080;'>🧪 AstraZeneca: Clinical reasoning Guardrail</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #800080;'>🧬 AstraZeneca: Clinical reasoning Assistant</h1>", unsafe_allow_html=True)
+# st.markdown("<h2 style='color: #800080;'>Self-evolving benchmark Generator</h2>", unsafe_allow_html=True)
 st.write("Ensuring LLM reliability in high-stakes therapeutic domains.")
 
 # 1. SIDEBAR CONFIGURATION
