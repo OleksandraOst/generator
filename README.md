@@ -4,7 +4,12 @@ Self-evolving benchmark Generator (🧬 AstraZeneca: Clinical reasoning Assistan
 - Every question is novel
 - Exponential moving average score
 
-The LLM has 3 different parts: generator, solver, and judge. The generator produces a novel question every iteration, the solver answers the question, and the judge evaluates it.
+The LLM has 3 different parts: generator, solver, and judge.
+The Generator creates a unique question at the calculated difficulty.
+The Solver (the model you are testing) attempts to answer it.
+The Judge compares the answer to the question's intent and awards a score (0.0 to 1.0).
+The score is fed back into the EMA, which will determine the difficulty for the *next* cycle.
+
 
 The difficulty integer (1–10) directly changes the instructions given to the Generator Model.
 
