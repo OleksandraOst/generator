@@ -1,4 +1,4 @@
-Self-evolving benchmark Generator (🧬Clinical reasoning Assistant)
+Self-evolving benchmark Generator (🧬 Clinical reasoning Assistant)
 
 - Supports an OpenAI API–compatible endpoint (to be used for the question generation, the question answering, and the evaluation)
 - Every question is novel
