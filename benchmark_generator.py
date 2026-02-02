@@ -86,97 +86,128 @@ class AstraZenecaBenchmark:
     def generate_question(self, domain: str, difficulty: int) -> BenchmarkItem:
         recent_questions = "\n".join(self.question_history[-10:])
 
-        prompt = f"""
-You are a Senior Principal Scientist at AstraZeneca.
+        if difficulty > 8:
+            prompt = "\nCRITICAL: The question MUST contain a subtle false premise or a counter-intuitive edge case. It should be designed to TRICK the model."
+        else: prompt = f"""
+            You are a Senior Principal Scientist at AstraZeneca.
 
-Generate a *novel* reasoning-heavy question in {domain}.
+            Generate a *novel* reasoning-heavy question in {domain}.
 
-Difficulty level: {difficulty}/10
+            Difficulty level: {difficulty}/10
 
-Focus on ONE:
-- ADC linker or payload trade-offs
-- clinical inclusion/exclusion edge cases
-- biomarker stratification failures
-- regulatory or translational risks
+            Focus on ONE:
+            - ADC linker or payload trade-offs
+            - clinical inclusion/exclusion edge cases
+            - biomarker stratification failures
+            - regulatory or translational risks
 
-Avoid repeating prior reasoning patterns.
-Previous questions:
-{recent_questions}
+            Avoid repeating prior reasoning patterns.
+            Previous questions:
+            {recent_questions}
 
-Return JSON only:
-{{
-  "topic": "...",
-  "question": "...",
-  "difficulty_intent": {difficulty}
-}}
-"""
+            Return JSON only:
+            {{
+            "topic": "...",
+            "question": "...",
+            "difficulty_intent": {difficulty}
+            }}
+            """
 
-        response = self.client.chat.completions.create(
-            model=self.generator_model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-        )
+        try:
+                response = self.client.chat.completions.create(
+                    model=self.generator_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                )
+                
+                # Validate JSON structure
+                item = BenchmarkItem.model_validate_json(
+                    response.choices[0].message.content
+                )
+                self.question_history.append(item.question)
+                return item
 
-        item = BenchmarkItem.model_validate_json(
-            response.choices[0].message.content
-        )
-        self.question_history.append(item.question)
-        return item
+        except Exception as e:
+                # Fallback if generation fails so the app doesn't crash
+                print(f"Error generating question: {e}")
+                return BenchmarkItem(
+                    topic="Generation Error",
+                    question="[SYSTEM ERROR: Could not generate question. Skipping...]",
+                    difficulty_intent=difficulty
+                )
 
     # --------------------------------------
     # Candidate Solver
     # --------------------------------------
     def solve(self, domain: str, question: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.solver_model,
-            messages=[
-                {"role": "system", "content": f"You are an expert in {domain}."},
-                {"role": "user", "content": question},
-            ],
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.solver_model,
+                messages=[
+                    {"role": "system", "content": f"You are an expert in {domain}."},
+                    {"role": "user", "content": question},
+                ],
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error solving question: {e}")
+            return "[SYSTEM ERROR: Solver failed to respond]"
 
     # --------------------------------------
-    # External Judge (NOT the solver)
+    # External Judge 
     # --------------------------------------
     def judge(self, domain: str, question: str, answer: str) -> Evaluation:
         prompt = """
-You are an independent clinical trial reviewer.
+            You are an independent clinical trial reviewer.
 
-Evaluate the answer strictly for:
-- scientific correctness
-- clinical validity
-- missing critical considerations
+            Evaluate the answer strictly for:
+            - scientific correctness
+            - clinical validity
+            - missing critical considerations
+            Be critical. If the answer is vague, generic, or misses any nuance, score it low. Do not give partial credit for 'mostly correct' answers 
+            
+            SCORING RULES:
+            - Score 1.0: The answer is chemically/clinically perfect AND safe.
+            - Score 0.5: The answer is mostly correct but misses a minor nuance or caveat.
+            - Score 0.0: The answer contains ANY hallucination, factual error, or safety risk.
 
-Return JSON with the exact format:
-{
-  "score": 0.0,
-  "reasoning": "string",
-  "failure_modes": [
-    {
-      "category": "string",
-      "description": "string"
-    }
-  ]
-}
-
-"""
-
-        response = self.client.chat.completions.create(
-            model=self.judge_model,
-            messages=[
-                {"role": "system", "content": prompt},
+            
+            Return JSON with the exact format:
+            {
+            "score": 0.0,
+            "reasoning": "string",
+            "failure_modes": [
                 {
-                    "role": "user",
-                    "content": f"Question:\n{question}\n\nAnswer:\n{answer}",
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
+                "category": "string",
+                "description": "string"
+                }
+            ]
+            }
 
-        return Evaluation.model_validate_json(
-            response.choices[0].message.content
-        )
+            """
+
+        try:
+                    response = self.client.chat.completions.create(
+                        model=self.judge_model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": f"Question:\n{question}\n\nAnswer:\n{answer}"},
+                        ],
+                        response_format={"type": "json_object"},
+                    )
+
+                    return Evaluation.model_validate_json(
+                        response.choices[0].message.content
+                    )
+
+        except Exception as e:
+                    print(f"Error judging response: {e}")
+                    # Return a 'Neutral' or 'Failure' evaluation to keep the loop alive
+                    return Evaluation(
+                        score=0.0, 
+                        reasoning=f"System Error during evaluation: {str(e)}", 
+                        failure_modes=[FailureMode(category="System", description="API/JSON Error")]
+                    )
 
     # --------------------------------------
     # Self-Evolving Loop
@@ -217,45 +248,3 @@ Return JSON with the exact format:
             "reasoning": evaluation.reasoning,
         }
 
-
-# ==========================================
-# 4. RUN
-# ==========================================
-if __name__ == "__main__":
-    SYSTEM_CONFIG = {
-        "api_key": "",
-        "base_url": "https://api.groq.com/openai/v1",
-        "generator_model": "llama-3.3-70b-versatile",
-        "solver_model": "llama-3.3-70b-versatile",
-        "judge_model": "llama-3.1-8b-instant",  # deliberately different
-    }
-
-    bench = AstraZenecaBenchmark(**SYSTEM_CONFIG)
-
-    raw_scores, ema_scores = [], []
-    domain = "Oncology (ADC and DNA Damage Response)"
-
-    print(f"\n--- AZ SELF-EVOLVING BENCHMARK ---\nDOMAIN: {domain}\n")
-
-    for i in range(5):
-        print(f"\n>>> ITERATION {i + 1}")
-        data = bench.run_iteration(domain)
-
-        print(f"Difficulty: {data['difficulty']}")
-        print(f"Topic: {data['topic']}")
-        print(f"Score: {data['score']:.2f}")
-        print(f"EMA: {data['ema']:.3f}")
-        print(f"Failure Modes: {data['failure_modes']}")
-
-        raw_scores.append(data["score"])
-        ema_scores.append(data["ema"])
-
-        time.sleep(8)
-
-    plt.plot(raw_scores, "o-", label="Score")
-    plt.plot(ema_scores, "-", label="EMA")
-    plt.legend()
-    plt.title("AI Scientific Reasoning Reliability")
-    plt.ylabel("Score")
-    plt.savefig("az_benchmark_results.png")
-    print("\n[✓] Saved az_benchmark_results.png")
