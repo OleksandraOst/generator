@@ -27,7 +27,7 @@ class TeeLogger:
     def close(self):
         self.log.close()
 
-logger = TeeLogger("az_benchmark_log.txt")
+logger = TeeLogger("benchmark_log.txt")
 sys.stdout = logger
 atexit.register(logger.close)
 
@@ -58,7 +58,7 @@ class Evaluation(BaseModel):
 # ==========================================
 # 3. BENCHMARK ENGINE (FIXED)
 # ==========================================
-class AstraZenecaBenchmark:
+class Benchmark:
     def __init__(
         self,
         api_key: str,
@@ -89,7 +89,7 @@ class AstraZenecaBenchmark:
         if difficulty > 8:
             prompt = "\nCRITICAL: The question MUST contain a subtle false premise or a counter-intuitive edge case. It should be designed to TRICK the model."
         else: prompt = f"""
-            You are a Senior Principal Scientist at AstraZeneca.
+            You are a Senior Principal Scientist at drug discovery company.
 
             Generate a *novel* reasoning-heavy question in {domain}.
 
