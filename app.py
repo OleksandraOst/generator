@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from benchmark_generator import AstraZenecaBenchmark # Our logic file
+from benchmark_generator import Benchmark # Our logic file
 import time
 
 st.set_page_config(page_title="AI-Science Assistant", layout="wide")
@@ -42,7 +42,6 @@ with st.sidebar:
         "gpt-4-turbo"
     ])
     
-    # These are AstraZeneca's 2026 Core Therapy Areas
     domain = st.selectbox("Research Areas", [
         "Oncology", 
         "Cardiovascular, Renal and Metabolism", 
@@ -61,7 +60,7 @@ if "data_history" not in st.session_state:
 
 # 2. MAIN INTERFACE
 if run_btn and api_key and base_url and solver_model and judge_model:
-    bench = AstraZenecaBenchmark(api_key=api_key,  base_url =  base_url,  generator_model = generator_model,
+    bench = Benchmark(api_key=api_key,  base_url =  base_url,  generator_model = generator_model,
     solver_model = solver_model,
     judge_model = judge_model)
     
@@ -120,7 +119,6 @@ if st.session_state.results_history != []:
             # Raw Score (Scatter for noise)
             ax1.plot(iterations, scores, 'o', color='#BDC3C7', markersize=8, alpha=0.6, label="Raw Judge Score")
             
-            # EMA (Line for signal) - AstraZeneca Purple
             ax1.plot(iterations, ema_vals, '-', color='#800080', linewidth=3, label="EMA (Trend)")
             
             # Threshold Line
@@ -201,7 +199,7 @@ if st.session_state.results_history != []:
     # if st.session_state.data_history:
     #     df = pd.DataFrame(st.session_state.data_history)
     #     csv = df.to_csv(index=False).encode('utf-8')
-    #     st.download_button("Download Benchmark Data", data=csv, file_name="az_benchmark.csv")
+    #     st.download_button("Download Benchmark Data", data=csv, file_name="benchmark.csv")
 
 
 
