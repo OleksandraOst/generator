@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 from benchmark_generator import AstraZenecaBenchmark # Our logic file
 import time
 
-st.set_page_config(page_title="AZ AI-Science Assistant", layout="wide")
+st.set_page_config(page_title="AI-Science Assistant", layout="wide")
 
-# Custom AZ Branding
-st.markdown("<h1 style='color: #800080;'>🧬 AstraZeneca: Clinical reasoning Assistant</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #800080;'>🧬Self-evolving benchmark Generator: Clinical reasoning Assistant</h1>", unsafe_allow_html=True)
 # st.markdown("<h2 style='color: #800080;'>Self-evolving benchmark Generator</h2>", unsafe_allow_html=True)
 st.write("Ensuring LLM reliability in high-stakes therapeutic domains.")
 
@@ -84,7 +83,7 @@ if run_btn and api_key and base_url and solver_model and judge_model:
                     st.success(f"**AI Response:** {data['answer']}")
                 with col2:
                     st.metric("Scientific Accuracy (Judge Score)", f"{data['score']*100}%")
-                    st.metric("EMA", f"{data['ema']*100}%")
+                    # st.metric("EMA", f"{data['ema']*100}%")
                     st.warning(f"**Peer Review:** {data['reasoning']}")
         
         time.sleep(3) # Stay under the rate limit
